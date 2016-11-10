@@ -145,6 +145,7 @@ typedef enum : NSUInteger {
     
     self.isPauseByUser = NO;
     self.loadedProgress = 0;
+    self.repeatBtn.hidden = YES;
     self.duration = 0;
     self.current  = 0;
     [self.stopButton setImage:[UIImage imageNamed:HcdImageSrcName(@"icon_pause")] forState:UIControlStateNormal];
