@@ -128,27 +128,10 @@ typedef enum : NSUInteger {
         _state = HCDPlayerStateStopped;
         _stopInBackground = YES;
         _isFullScreen = NO;
-        _canFullScreen = YES;
+        _canFullScreen = NO;
         _playRepatCount = 1;
         _playCount = 1;
         
-        UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-        switch (orientation) {
-            case UIDeviceOrientationPortrait:
-                _currentOrientation = UIInterfaceOrientationPortrait;
-                break;
-            case UIDeviceOrientationLandscapeLeft:
-                _currentOrientation = UIInterfaceOrientationLandscapeLeft;
-                break;
-            case UIDeviceOrientationLandscapeRight:
-                _currentOrientation = UIInterfaceOrientationLandscapeRight;
-                break;
-            case UIDeviceOrientationPortraitUpsideDown:
-                _currentOrientation = UIInterfaceOrientationPortraitUpsideDown;
-                break;
-            default:
-                break;
-        }
         [HcdLightView sharedInstance];
     }
     return self;
@@ -164,6 +147,8 @@ typedef enum : NSUInteger {
     self.loadedProgress = 0;
     self.duration = 0;
     self.current  = 0;
+    [self.stopButton setImage:[UIImage imageNamed:HcdImageSrcName(@"icon_pause")] forState:UIControlStateNormal];
+    [self.stopButton setImage:[UIImage imageNamed:HcdImageSrcName(@"icon_pause_hl")] forState:UIControlStateHighlighted];
     
     _showView = showView;
     _showViewRect = showView.frame;
@@ -255,20 +240,6 @@ typedef enum : NSUInteger {
     } else {
         [self playWithVideoUrl:url showView:showView andSuperView:superView];
     }
-}
-
-- (void)fullScreen {
-    //如果全屏下
-    if (_isFullScreen) {
-        [self toOrientation:UIInterfaceOrientationPortrait];
-    }else{
-        [self toOrientation:UIInterfaceOrientationLandscapeRight];
-    }
-    [self showToolView];
-}
-
-- (void)halfScreen {
-    
 }
 
 + (void)clearAllVideoCache {
@@ -629,16 +600,6 @@ typedef enum : NSUInteger {
     return _stopButton;
 }
 
-- (UIButton *)screenButton {
-    if (!_screenButton) {
-        _screenButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        [_screenButton addTarget:self action:@selector(fullScreen) forControlEvents:UIControlEventTouchUpInside];
-        [_screenButton setImage:[UIImage imageNamed:HcdImageSrcName(@"icon_full")] forState:UIControlStateNormal];
-        [_screenButton setImage:[UIImage imageNamed:HcdImageSrcName(@"icon_full")] forState:UIControlStateHighlighted];
-    }
-    return _screenButton;
-}
-
 - (UIButton *)repeatBtn {
     if (!_repeatBtn) {
         _repeatBtn = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -727,16 +688,6 @@ typedef enum : NSUInteger {
         make.height.mas_equalTo(44);
     }];
     
-    self.screenButton.frame = CGRectMake(CGRectGetWidth(self.toolView.frame) - 44, 0, 44, 44);
-    [self.screenButton removeFromSuperview];
-    [self.toolView addSubview:self.screenButton];
-    [self.screenButton mas_makeConstraints:^(MASConstraintMaker *make) {
-        make.top.mas_equalTo(0);
-        make.right.mas_equalTo(0);
-        make.width.mas_equalTo(44);
-        make.height.mas_equalTo(44);
-    }];
-    
     self.currentTimeLbl.frame = CGRectMake(44, 0, 52, 44);
     [self.currentTimeLbl removeFromSuperview];
     [self.toolView addSubview:self.currentTimeLbl];
@@ -752,7 +703,7 @@ typedef enum : NSUInteger {
     [self.toolView addSubview:self.totalTimeLbl];
     [self.totalTimeLbl mas_makeConstraints:^(MASConstraintMaker *make) {
         make.top.mas_equalTo(0);
-        make.right.equalTo(weakSelf.screenButton.mas_left);
+        make.right.mas_equalTo(0);
         make.width.mas_equalTo(52);
         make.height.mas_equalTo(44);
     }];
@@ -822,12 +773,6 @@ typedef enum : NSUInteger {
     tap.delegate = self;
     [self.touchView addGestureRecognizer:tap];
     
-    UIPanGestureRecognizer *panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-    [panRecognizer setMinimumNumberOfTouches:1];
-    [panRecognizer setMaximumNumberOfTouches:1];
-    [panRecognizer setDelegate:self];
-    [self.touchView addGestureRecognizer:panRecognizer];
-    
     UITapGestureRecognizer *sliderTap = [[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(sliderTapAction:)];
     sliderTap.numberOfTapsRequired = 1;
     sliderTap.numberOfTouchesRequired = 1;
@@ -869,99 +814,6 @@ typedef enum : NSUInteger {
         
         [self seekToTime:value];
         [self updateCurrentTime:value];
-    }
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)recognizer {
-    
-    CGPoint touchPoint = [recognizer locationInView:self.touchView];
-    NSLog(@"(%f,%f)", touchPoint.x, touchPoint.y);
-    
-    if ([(UIPanGestureRecognizer *)recognizer state] == UIGestureRecognizerStateBegan) {
-        //触摸开始, 初始化一些值
-        _hasMoved = NO;
-        _controlJudge = NO;
-        _touchBeginValue = self.playSlider.value;
-        _touchBeginVoiceValue = _volumeSlider.value;
-        _touchBeginLightValue = [UIScreen mainScreen].brightness;
-        _touchBeginPoint = touchPoint;
-    }
-    
-    if ([(UIPanGestureRecognizer *)recognizer state] == UIGestureRecognizerStateChanged) {
-        
-        //如果移动的距离过于小, 就判断为没有移动
-        if (fabs(touchPoint.x - _touchBeginPoint.x) < LeastMoveDistance && fabs(touchPoint.y - _touchBeginPoint.y) < LeastMoveDistance) {
-            return;
-        }
-        
-        _hasMoved = YES;
-        
-        //如果还没有判断出是什么手势就进行判断
-        if (!_controlJudge) {
-            //根据滑动角度的tan值来进行判断
-            float tan = fabs(touchPoint.y - _touchBeginPoint.y) / fabs(touchPoint.x - _touchBeginPoint.x);
-            
-            //当滑动角度小于30度的时候, 进度手势
-            if (tan < 1 / sqrt(3)) {
-                self.controlType = HCDPlayerControlTypeProgress;
-                _controlJudge = YES;
-            }
-            
-            //当滑动角度大于60度的时候, 声音和亮度
-            else if (tan > sqrt(3)) {
-                //判断是在屏幕的左半边还是右半边滑动, 左侧控制为亮度, 右侧控制音量
-                if (_touchBeginPoint.x < self.touchView.frame.size.width / 2) {
-                    _controlType = HCDPlayerControlTypeLight;
-                }else{
-                    _controlType = HCDPlayerControlTypeVoice;
-                }
-                _controlJudge = YES;
-            } else {
-                _controlType = HCDPlayerControlTypeNone;
-                return;
-            }
-        }
-        
-        if (HCDPlayerControlTypeProgress == _controlType) {
-            float value = [self moveProgressControllWithTempPoint:touchPoint];
-            [self timeValueChangingWithValue:value];
-        } else if (HCDPlayerControlTypeVoice == _controlType) {
-            //根据触摸开始时的音量和触摸开始时的点去计算出现在滑动到的音量
-            float voiceValue = _touchBeginVoiceValue - ((touchPoint.y - _touchBeginPoint.y) / CGRectGetHeight(self.touchView.frame));
-            //判断控制一下, 不能超出 0~1
-            if (voiceValue < 0) {
-                self.volumeSlider.value = 0;
-            }else if(voiceValue > 1){
-                self.volumeSlider.value = 1;
-            }else{
-                self.volumeSlider.value = voiceValue;
-            }
-        } else if (HCDPlayerControlTypeLight == _controlType) {
-            [UIScreen mainScreen].brightness -= ((touchPoint.y - _touchBeginPoint.y) / 10000);
-        } else if (HCDPlayerControlTypeNone == _controlType) {
-            if (self.toolView.hidden) {
-                [self showToolView];
-            } else {
-                [self toolViewHidden];
-            }
-        }
-        
-    }
-    
-    if (([(UIPanGestureRecognizer *)recognizer state] == UIGestureRecognizerStateEnded) || ([(UIPanGestureRecognizer *)recognizer state] == UIGestureRecognizerStateCancelled)) {
-        CGFloat x = recognizer.view.center.x;
-        CGFloat y = recognizer.view.center.y;
-        
-        NSLog(@"%lf,%lf", x, y);
-        _controlJudge = NO;
-        //判断是否移动过,
-        if (_hasMoved) {
-            if (HCDPlayerControlTypeProgress == _controlType) {
-                float value = [self moveProgressControllWithTempPoint:touchPoint];
-                [self seekToTime:value];
-                self.timeSheetView.hidden = YES;
-            }
-        }
     }
 }
 
@@ -1266,141 +1118,11 @@ typedef enum : NSUInteger {
 
 #pragma mark - 通知中心检测到屏幕旋转
 -(void)orientationChanged:(NSNotification *)notification{
-    [self updateOrientation];
+    
 }
 
 - (void)updateOrientation {
-    UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-    switch (orientation) {
-        case UIDeviceOrientationPortrait:
-            [self toOrientation:UIInterfaceOrientationPortrait];
-            break;
-        case UIDeviceOrientationLandscapeLeft:
-            [self toOrientation:UIInterfaceOrientationLandscapeRight];
-            break;
-        case UIDeviceOrientationLandscapeRight:
-            [self toOrientation:UIInterfaceOrientationLandscapeLeft];
-            break;
-        case UIDeviceOrientationPortraitUpsideDown:
-            [self toOrientation:UIInterfaceOrientationPortraitUpsideDown];
-            break;
-        default:
-            break;
-    }
-}
 
-#pragma mark - 全屏旋转处理
-
-- (void)toOrientation:(UIInterfaceOrientation)orientation {
-    
-    if (!_canFullScreen) {
-        return;
-    }
-    
-    //    UIInterfaceOrientation currentOrientation = [UIApplication sharedApplication].statusBarOrientation;
-    if (_currentOrientation == orientation) {
-        return;
-    }
-    
-    if (orientation == UIInterfaceOrientationPortrait || orientation == UIInterfaceOrientationPortraitUpsideDown) {
-        [self.showView removeFromSuperview];
-        [self.playerSuperView addSubview:self.showView];
-        
-        HcdLightView *lightView = [HcdLightView sharedInstance];
-        [[UIApplication sharedApplication].keyWindow bringSubviewToFront:lightView];
-        __weak HcdCacheVideoPlayer * weakSelf = self;
-        [self.showView mas_remakeConstraints:^(MASConstraintMaker *make) {
-            make.top.mas_equalTo(CGRectGetMinY(weakSelf.showViewRect));
-            make.left.mas_equalTo(CGRectGetMinX(weakSelf.showViewRect));
-            make.width.mas_equalTo(CGRectGetWidth(weakSelf.showViewRect));
-            make.height.mas_equalTo(CGRectGetHeight(weakSelf.showViewRect));
-        }];
-        
-        [lightView mas_remakeConstraints:^(MASConstraintMaker *make) {
-            make.centerX.equalTo([UIApplication sharedApplication].keyWindow);
-            make.centerY.equalTo([UIApplication sharedApplication].keyWindow).offset(-5);
-            make.width.mas_equalTo(155);
-            make.height.mas_equalTo(155);
-        }];
-    } else if (orientation == UIInterfaceOrientationLandscapeLeft || orientation == UIInterfaceOrientationLandscapeRight) {
-        [self.showView removeFromSuperview];
-        [[UIApplication sharedApplication].keyWindow addSubview:self.showView];
-        
-        // 亮度view加到window最上层
-        HcdLightView *lightView = [HcdLightView sharedInstance];
-        [[UIApplication sharedApplication].keyWindow insertSubview:self.showView belowSubview:lightView];
-        
-        [self.showView mas_remakeConstraints:^(MASConstraintMaker *make) {
-            make.width.equalTo(@(kScreenHeight));
-            make.height.equalTo(@(kScreenWidth));
-            make.center.equalTo([[UIApplication sharedApplication].delegate window]);
-        }];
-        
-        [lightView mas_remakeConstraints:^(MASConstraintMaker *make) {
-            make.centerX.equalTo([UIApplication sharedApplication].keyWindow);
-            make.centerY.equalTo([UIApplication sharedApplication].keyWindow);
-            make.width.mas_equalTo(155);
-            make.height.mas_equalTo(155);
-        }];
-    }
-    
-    _currentOrientation = orientation;
-    
-    //
-    //    [UIView beginAnimations:nil context:nil];
-    //
-    //    [UIView setAnimationDuration:0.5];
-    //    [UIView commitAnimations];
-    [UIView animateWithDuration:0.5 animations:^{
-        [[UIApplication sharedApplication] setStatusBarOrientation:_currentOrientation animated:YES];
-        //旋转视频播放的view和显示亮度的view
-        self.showView.transform = [self getOrientation:orientation];
-        [HcdLightView sharedInstance].transform = [self getOrientation:orientation];
-    } completion:^(BOOL finished) {
-        
-    }];
-}
-
-//根据状态条旋转的方向来旋转 avplayerView
--(CGAffineTransform)getOrientation:(UIInterfaceOrientation)orientation{
-    //    UIInterfaceOrientation orientation = [UIApplication sharedApplication].statusBarOrientation;
-    
-    if (orientation == UIInterfaceOrientationPortrait) {
-        [self toPortraitUpdate];
-        return CGAffineTransformIdentity;
-    } else if (orientation == UIInterfaceOrientationLandscapeLeft){
-        [self toLandscapeUpdate];
-        return CGAffineTransformMakeRotation(-M_PI_2);
-    } else if (orientation == UIInterfaceOrientationLandscapeRight){
-        [self toLandscapeUpdate];
-        return CGAffineTransformMakeRotation(M_PI_2);
-    } else if (orientation == UIInterfaceOrientationPortraitUpsideDown) {
-        [self toPortraitUpdate];
-        return CGAffineTransformMakeRotation(M_PI);
-    }
-    return CGAffineTransformIdentity;
-}
-
--(void)toPortraitUpdate{
-    _isFullScreen = NO;
-    self.toolView.hidden = YES;
-    //处理状态条
-    [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleDefault];
-    if ([UIApplication sharedApplication].statusBarHidden) {
-        [[UIApplication sharedApplication] setStatusBarHidden:NO];
-    }
-}
-
--(void)toLandscapeUpdate{
-    _isFullScreen = YES;
-    
-    //处理状态条
-    [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleLightContent];
-    if (self.toolView.hidden) {
-        [[UIApplication sharedApplication] setStatusBarHidden:YES];
-    }else{
-        [[UIApplication sharedApplication] setStatusBarHidden:NO];
-    }
 }
 
 - (void)dealloc
