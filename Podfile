@@ -1,3 +1,3 @@
 target 'hcdCachePlayerDemo' do
-pod 'Masonry'
+pod 'Masonry', '~> 0.6.1'
 end
